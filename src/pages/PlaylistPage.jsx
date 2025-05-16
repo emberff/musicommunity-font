@@ -3,20 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from '../config';
 import { PlayerContext } from '../App';
 
-const Main = () => {
+const PlaylistPage = () => {
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
+  const [playlists, setPlaylists] = useState([]);
+  const [pageNo, setPageNo] = useState(1);
+  const [pageSize] = useState(3);
+  const [isLast, setIsLast] = useState(false);
+  const [totalPages, setTotalPages] = useState(1);
   const [showUserInfo, setShowUserInfo] = useState(false);
   const { setCurrentSong } = useContext(PlayerContext);
-
-  // Mock songs for demonstration
-  const popularSongs = [
-    { id: 1, name: 'Summer Vibes', artist: 'Electric Dreams', duration: '3:45', cover: 'song-cover.jpg' },
-    { id: 2, name: 'Night Lights', artist: 'Neon Wave', duration: '4:12', cover: 'song-cover.jpg' },
-    { id: 3, name: 'Urban Jungle', artist: 'City Sound', duration: '3:28', cover: 'song-cover.jpg' },
-    { id: 4, name: 'Sunset Boulevard', artist: 'Ocean Drive', duration: '5:02', cover: 'song-cover.jpg' },
-    { id: 5, name: 'Midnight Run', artist: 'The Cruisers', duration: '3:55', cover: 'song-cover.jpg' },
-  ];
 
   useEffect(() => {
     const fetchUserInfo = async () => {
@@ -26,9 +22,7 @@ const Main = () => {
             Authorization: `Bearer ${localStorage.getItem('token')}`
           }
         });
-        
         if (!response.ok) throw new Error('网络响应异常');
-        
         const data = await response.json();
         if (data.success) {
           setUsername(data.data.name);
@@ -38,13 +32,87 @@ const Main = () => {
         navigate('/login');
       }
     };
-
     fetchUserInfo();
   }, [navigate]);
+
+  useEffect(() => {
+    const fetchPlaylists = async () => {
+      try {
+        // 使用URLSearchParams来构建参数，避免字符串拼接导致的精度丢失
+        const url = new URL(`${API_BASE_URL}/capi/playlist/page`);
+        url.searchParams.append('pageNo', String(pageNo));
+        url.searchParams.append('pageSize', String(pageSize));
+        
+        console.log('请求歌单列表完整URL:', url.toString());
+        
+        const response = await fetch(url.toString(), {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('token')}`
+          }
+        });
+        const text = await response.text(); // 先获取原始文本
+        
+        // 手动解析JSON，保持大整数ID为字符串
+        let data;
+        try {
+          data = JSON.parse(text);
+          console.log('原始歌单列表数据:', data);
+          
+          if (data.success && data.data && data.data.list) {
+            // 确保每个歌单的ID保持为字符串格式
+            data.data.list.forEach(playlist => {
+              if (playlist.id) {
+                // 记录原始ID值以便调试
+                console.log(`歌单ID: ${playlist.id}, 类型: ${typeof playlist.id}`);
+                // 确保ID为字符串
+                playlist.id = String(playlist.id);
+              }
+            });
+          }
+        } catch (e) {
+          console.error('JSON解析错误:', e);
+          return;
+        }
+        
+        if (data.success) {
+          setPlaylists(data.data.list);
+          setIsLast(data.data.isLast);
+          if (data.data.totalRecords) {
+            setTotalPages(Math.ceil(data.data.totalRecords / pageSize));
+          }
+        }
+      } catch (error) {
+        console.error('获取歌单失败:', error);
+      }
+    };
+    fetchPlaylists();
+  }, [pageNo, pageSize]);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
     navigate('/login');
+  };
+
+  const handlePrevPage = () => {
+    if (pageNo > 1) {
+      setPageNo(pageNo - 1);
+    }
+  };
+
+  const handleNextPage = () => {
+    if (!isLast) {
+      setPageNo(pageNo + 1);
+    }
+  };
+
+  const navigateToPlaylist = (playlistId) => {
+    // 确保ID作为字符串处理，防止大整数精度丢失
+    const strId = String(playlistId);
+    console.log('导航到歌单详情，歌单ID:', strId);
+    
+    // 使用URL构建
+    const pathname = `/playlist/${strId}`;
+    navigate(pathname);
   };
 
   const playSong = (song) => {
@@ -52,7 +120,22 @@ const Main = () => {
   };
 
   const navigateToSongDetail = (songId) => {
-    navigate(`/song/${songId}`);
+    // 确保ID作为字符串处理，防止大整数精度丢失
+    const strId = String(songId);
+    console.log('导航到歌曲详情，歌曲ID:', strId);
+    
+    // 使用URL构建
+    const pathname = `/song/${strId}`;
+    navigate(pathname);
+  };
+
+  // Mock song data for the preview
+  const getSampleSongs = (playlist) => {
+    return [
+      { id: `${playlist.id}-1`, name: '歌曲1', artist: '歌手名', cover: playlist.cover, url: '#', playlistId: playlist.id },
+      { id: `${playlist.id}-2`, name: '歌曲2', artist: '歌手名', cover: playlist.cover, url: '#', playlistId: playlist.id },
+      { id: `${playlist.id}-3`, name: '歌曲3', artist: '歌手名', cover: playlist.cover, url: '#', playlistId: playlist.id }
+    ];
   };
 
   return (
@@ -94,11 +177,11 @@ const Main = () => {
         {/* 主内容区域 */}
         <div className="main-content">
           <div className="sidebar">
-            <div className="nav-item active">
+            <div className="nav-item" onClick={() => navigate('/')}>
               <i className="icon-home"></i>
               <span>发现音乐</span>
             </div>
-            <div className="nav-item" onClick={() => navigate('/playlists')}>
+            <div className="nav-item active">
               <i className="icon-library"></i>
               <span>我的歌单</span>
             </div>
@@ -109,67 +192,66 @@ const Main = () => {
           </div>
 
           <div className="content">
-            <div className="cards-container">
-              {/* 推荐歌单卡片 */}
-              <div className="card playlist-card">
-                <h3>推荐歌单</h3>
-                <ul className="card-list">
-                  {[1, 2, 3, 4, 5].map((item) => (
-                    <li key={item}>
-                      <img src="playlist-cover.jpg" alt="cover" />
-                      <div className="item-info">
-                        <div className="title">热门电子音乐单</div>
-                        <div className="subtitle">32首 播放量12万</div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {/* 热门歌曲卡片 */}
-              <div className="card songs-card">
-                <h3>热门歌曲</h3>
-                <ul className="card-list">
-                  {popularSongs.map((song) => (
-                    <li key={song.id} className="song-item">
-                      <span className="index">{song.id}</span>
-                      <img 
-                        src={song.cover || 'default-cover.jpg'} 
-                        alt="cover" 
-                        className="song-cover" 
-                        onClick={() => navigateToSongDetail(song.id)}
-                      />
-                      <div className="item-info">
-                        <div className="title">{song.name}</div>
-                        <div className="subtitle">{song.artist}</div>
-                      </div>
-                      <button 
-                        className="play-song-btn"
-                        onClick={() => playSong(song)}
-                      >
-                        ▶
-                      </button>
-                      <span className="duration">{song.duration}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {/* 人气歌手卡片 */}
-              <div className="card artists-card">
-                <h3>人气歌手</h3>
-                <ul className="card-list">
-                  {[1, 2, 3, 4, 5].map((item) => (
-                    <li key={item}>
-                      <img src="artist-avatar.jpg" alt="artist" />
-                      <div className="item-info">
-                        <div className="title">Alan Walker</div>
-                        <div className="subtitle">电子音乐制作人</div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+            <h2 className="section-title">我的歌单</h2>
+            
+            <div className="playlists-grid">
+              {playlists.map((playlist) => {
+                const sampleSongs = getSampleSongs(playlist);
+                return (
+                  <div key={playlist.id} className="playlist-card" onClick={() => navigateToPlaylist(playlist.id)}>
+                    <h3>{playlist.name}</h3>
+                    <ul className="card-list">
+                      {sampleSongs.map((song, index) => (
+                        <li key={song.id} className="song-item">
+                          <img 
+                            src={song.cover || 'default-cover.jpg'} 
+                            alt="cover" 
+                            className="song-cover"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigateToSongDetail(song.id);
+                            }}
+                          />
+                          <div className="item-info">
+                            <div className="title">{song.name}</div>
+                            <div className="subtitle">
+                              {index === 2 ? `共${playlist.plSongNum}首` : song.artist}
+                            </div>
+                          </div>
+                          <div className="song-duration">3:45</div>
+                          <button 
+                            className="play-song-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              playSong(song);
+                            }}
+                          >
+                            ▶
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
+            
+            <div className="pagination">
+              <button 
+                className="pagination-btn prev-btn" 
+                onClick={handlePrevPage}
+                disabled={pageNo === 1}
+              >
+                上一页
+              </button>
+              <span className="page-info">{pageNo} / {totalPages}</span>
+              <button 
+                className="pagination-btn next-btn" 
+                onClick={handleNextPage}
+                disabled={isLast}
+              >
+                下一页
+              </button>
             </div>
           </div>
         </div>
@@ -180,7 +262,7 @@ const Main = () => {
         </div>
       </div>
 
-      <style jsx>{`
+      <style>{`
         .main-container {
           position: relative;
           max-width: 1600px;
@@ -334,30 +416,49 @@ const Main = () => {
           min-width: 0;
         }
 
-        /* 卡片容器 */
-        .cards-container {
+        /* 章节标题 */
+        .section-title {
+          font-size: 24px;
+          font-weight: 700;
+          margin: 0 0 24px 0;
+          color: #fff;
+        }
+
+        /* 歌单网格 */
+        .playlists-grid {
           display: grid;
           grid-template-columns: repeat(3, 1fr);
           gap: 30px;
+          min-height: 300px;
         }
 
-        .card {
+        .playlist-card {
           background: #181818;
           border-radius: 12px;
           padding: 20px;
-          transition: transform 0.3s ease;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+          transition: transform 0.3s ease, background 0.3s ease;
+          border-left: 4px solid #9b59b6;
+          cursor: pointer;
         }
 
-        .card:hover {
+        .playlist-card:hover {
           transform: translateY(-5px);
-          background: #242424;
+          background: #202020;
         }
 
-        .card h3 {
+        .playlist-card h3 {
           font-size: 20px;
           margin: 0 0 20px 0;
           color: #fff;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          cursor: pointer;
+        }
+
+        .playlist-card h3:hover {
+          text-decoration: underline;
         }
 
         /* 卡片列表 */
@@ -378,55 +479,27 @@ const Main = () => {
           align-items: center;
           gap: 15px;
           transition: background 0.3s;
+          position: relative;
         }
 
         .card-list li:hover {
           background: #2e2e2e;
         }
 
-        /* 特殊卡片样式 */
-        .playlist-card { border-left: 4px solid #9b59b6; }
-        .songs-card    { border-left: 4px solid #3498db; }
-        .artists-card  { border-left: 4px solid #e74c3c; }
-
-        .playlist-card img,
-        .artists-card img { 
-          width: 50px; 
-          height: 50px; 
-          border-radius: 6px; 
-          object-fit: cover;
-        }
-
-        .song-cover {
-          width: 40px;
-          height: 40px;
+        .card-list img {
+          width: 50px;
+          height: 50px;
           border-radius: 6px;
           object-fit: cover;
           cursor: pointer;
-          transition: opacity 0.2s;
-        }
-
-        .song-cover:hover {
-          opacity: 0.8;
-        }
-
-        .artists-card img { 
-          border-radius: 50%; 
-        }
-
-        .songs-card .index { 
-          color: #7f8c8d; 
-          width: 20px; 
-          text-align: center; 
-        }
-
-        .songs-card .duration { 
-          color: #7f8c8d; 
-          margin-left: auto; 
         }
 
         .song-item {
           position: relative;
+        }
+
+        .song-cover:hover {
+          opacity: 0.8;
         }
 
         .play-song-btn {
@@ -443,7 +516,6 @@ const Main = () => {
           cursor: pointer;
           transition: all 0.2s;
           margin-right: 10px;
-          margin-left: auto;
         }
 
         .play-song-btn:hover {
@@ -452,17 +524,59 @@ const Main = () => {
           background: rgba(255, 255, 255, 0.1);
         }
 
-        .item-info .title { 
-          font-size: 14px; 
-          color: #fff; 
+        .song-duration {
+          color: #7f8c8d;
+          font-size: 12px;
+          margin-left: auto;
+        }
+
+        .item-info .title {
+          font-size: 14px;
+          color: #fff;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
         }
 
-        .item-info .subtitle { 
-          font-size: 12px; 
-          color: #b3b3b3; 
+        .item-info .subtitle {
+          font-size: 12px;
+          color: #b3b3b3;
+        }
+
+        /* 分页控制 */
+        .pagination {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          margin-top: 40px;
+          gap: 20px;
+        }
+        
+        .pagination-btn {
+          background: transparent;
+          border: 1px solid #b3b3b3;
+          color: #b3b3b3;
+          padding: 8px 16px;
+          border-radius: 20px;
+          font-size: 13px;
+          cursor: pointer;
+          transition: all 0.3s;
+        }
+        
+        .pagination-btn:hover:not(:disabled) {
+          background: rgba(255, 255, 255, 0.1);
+          color: #fff;
+          border-color: #fff;
+        }
+        
+        .pagination-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        
+        .page-info {
+          font-size: 14px;
+          color: #b3b3b3;
         }
 
         /* 播放器 */
@@ -480,18 +594,14 @@ const Main = () => {
 
         /* 响应式设计 */
         @media (max-width: 1400px) {
-          .cards-container { 
-            grid-template-columns: repeat(3, 1fr); 
+          .playlists-grid { 
+            grid-template-columns: repeat(2, 1fr); 
           }
         }
 
-        @media (max-width: 1200px) {
-          .cards-container { 
+        @media (max-width: 992px) {
+          .playlists-grid { 
             grid-template-columns: 1fr; 
-          }
-          
-          .card { 
-            max-width: 100%; 
           }
         }
 
@@ -510,4 +620,4 @@ const Main = () => {
   );
 };
 
-export default Main;
+export default PlaylistPage;
